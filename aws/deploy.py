@@ -91,6 +91,53 @@ def verify_aws_policy(policy):
 
 
 # ---------------------------------------------------------
+# AWS ROLLBACK
+# ---------------------------------------------------------
+
+def rollback_aws_policy(policy):
+    """
+    Remove the policy rule that was just deployed.
+    Used when deployment verification detects a mismatch.
+    """
+
+    try:
+
+        ec2.revoke_security_group_ingress(
+            GroupId=SECURITY_GROUP_ID,
+            IpPermissions=[
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": policy.port,
+                    "ToPort": policy.port,
+                    "IpRanges": [
+                        {
+                            "CidrIp": normalize_source(policy.source)
+                        }
+                    ]
+                }
+            ]
+        )
+
+        return {
+            "rollback": True,
+            "message": "Policy successfully rolled back from AWS Security Group"
+        }
+
+    except ClientError as e:
+
+        error_code = e.response["Error"]["Code"]
+
+        if error_code == "InvalidPermission.NotFound":
+
+            return {
+                "rollback": False,
+                "message": "Policy rule was not found during rollback"
+            }
+
+        raise
+
+
+# ---------------------------------------------------------
 # AWS DEPLOYMENT
 # ---------------------------------------------------------
 
@@ -124,6 +171,22 @@ def deploy_to_aws(policy):
             # Verify deployment
             verification = verify_aws_policy(policy)
 
+            # If deployment does not match expected policy,
+            # trigger automatic rollback
+            if verification["misconfiguration"]:
+
+                rollback_result = rollback_aws_policy(policy)
+
+                return {
+                    "status": "rollback",
+                    "provider": "aws",
+                    "action": "allow",
+                    "security_group_id": SECURITY_GROUP_ID,
+                    "verification": verification,
+                    "rollback": rollback_result
+                }
+
+            # Deployment was correct
             return {
                 "status": "success",
                 "provider": "aws",
