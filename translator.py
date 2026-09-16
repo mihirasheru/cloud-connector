@@ -1,14 +1,26 @@
 from schemas.policy import Policy
+import ipaddress
 
+def translate_to_aws(policy):
 
-def translate_to_aws(policy: Policy):
+    source = policy.source.strip()
+
+    # Convert plain IP to /32
+    if "/" not in source:
+        try:
+            ip = ipaddress.ip_address(source)
+            source = f"{ip}/32"
+
+        except ValueError:
+            pass
+
     return {
         "IpProtocol": "tcp",
         "FromPort": policy.port,
         "ToPort": policy.port,
         "IpRanges": [
             {
-                "CidrIp": f"{policy.source}/32"
+                "CidrIp": source
             }
         ]
     }
